@@ -20,8 +20,6 @@ Design rules:
 
 from __future__ import annotations
 
-import hashlib
-import re
 from datetime import datetime
 from typing import Any
 
@@ -58,6 +56,15 @@ from agent_framework.errors import (
     AgentOutputError,
 )
 from agent_framework.ids import deterministic_id
+from agent_framework.sanitize import (
+    bounded_str_list,
+    clean_text,
+    normalize_key,
+    safe_confidence,
+    safe_int,
+    safe_url,
+    stable_probability,
+)
 from agent_framework.structured import extract_json_dict
 
 # Bounded resource usage (AGENTS rule 11): the source spec targets ~10
@@ -70,69 +77,30 @@ MAX_TEXT = 500
 MAX_SNIPPET = 200
 DEFAULT_PLATFORM = "linkedin"
 
-_WS = re.compile(r"\s+")
+# Sanitizing helpers (clean_text, normalize_key, bounded_str_list,
+# safe_confidence, safe_int, safe_url, stable_probability) live in
+# agent_framework.sanitize so every agent validates untrusted input the same
+# way; they are re-exported below for convenience and remain pure functions.
 
-
-# ---------------------------------------------------------------------------
-# Pure sanitizing helpers (unit-testable without a router).
-# ---------------------------------------------------------------------------
-
-
-def clean_text(value: Any, *, max_len: int = MAX_TEXT) -> str:
-    """Collapse whitespace and strip; '' for anything that is not a string."""
-    if not isinstance(value, str):
-        return ""
-    return _WS.sub(" ", value).strip()[:max_len]
-
-
-def normalize_key(value: Any) -> str:
-    """Normalize an identity key: trimmed, lowercased, '@' stripped."""
-    return clean_text(value).lstrip("@").lower()
-
-
-def bounded_str_list(value: Any, *, limit: int = MAX_NOTES, max_len: int = MAX_TEXT) -> list[str]:
-    """Sanitize an untrusted list into at most ``limit`` non-empty strings."""
-    if not isinstance(value, list):
-        return []
-    out: list[str] = []
-    for item in value:
-        text = clean_text(item, max_len=max_len)
-        if text:
-            out.append(text)
-        if len(out) >= limit:
-            break
-    return out
-
-
-def safe_confidence(value: Any, default: float = 0.5) -> float:
-    """Clamp an untrusted confidence to [0, 1]; non-numbers get the default."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return default
-    number = float(value)
-    if number != number:  # NaN
-        return default
-    return min(1.0, max(0.0, number))
-
-
-def safe_int(value: Any) -> int | None:
-    """Return a positive int or None (bools, floats, zero, negatives rejected)."""
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        return None
-    return value
-
-
-def safe_url(value: Any) -> str | None:
-    """Return the value only when it is an http(s) URL string, else None."""
-    text = clean_text(value)
-    if text.startswith("http://") or text.startswith("https://"):
-        return text
-    return None
-
-
-def stable_probability(*parts: Any) -> float:
-    """Deterministic pseudo-probability in [0.30, 0.90] derived from parts."""
-    digest = hashlib.sha256("\x1f".join(str(part) for part in parts).encode()).hexdigest()
-    return 0.30 + (int(digest[:8], 16) % 61) / 100.0
+__all__ = [
+    "CreatorResearchAgent",
+    "build_creator_research_prompt",
+    "build_findings",
+    "build_profiles",
+    "build_report",
+    "build_analyses",
+    "dedupe_candidates",
+    "normalize_candidates",
+    "validate_request_input",
+    "normalize_router_failure",
+    "clean_text",
+    "normalize_key",
+    "bounded_str_list",
+    "safe_confidence",
+    "safe_int",
+    "safe_url",
+    "stable_probability",
+]
 
 
 def normalize_candidates(payload: dict[str, Any]) -> list[dict[str, Any]]:
